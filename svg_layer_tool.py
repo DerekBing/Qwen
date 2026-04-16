@@ -264,10 +264,100 @@ class SVGParser:
                 return layer
         return None
 
-    def get_elements_by_layer(self, layer_name: str) -> List[SVGElement]:
-        """获取指定图层的所有元素"""
+    def get_elements_by_layer(self, layer_name: str) -> List[Dict[str, Any]]:
+        """获取指定图层的所有元素，还原use引用并简化输出"""
         layer = self.get_layer_by_name(layer_name)
-        return layer.elements if layer else []
+        if not layer:
+            return []
+
+        result = []
+        for elem in layer.elements:
+            processed = self._process_element_for_output(elem)
+            if processed:
+                result.append(processed)
+        return result
+
+    def _process_element_for_output(self, elem: SVGElement) -> Optional[Dict[str, Any]]:
+        """处理元素：还原use引用，解析transform，简化输出格式"""
+        attrs = elem.attributes
+
+        # 解析transform
+        transform_x, transform_y = 0.0, 0.0
+        transform = attrs.get('transform', '')
+        if transform:
+            tx, ty = self._parse_translate(transform)
+            transform_x, transform_y = tx, ty
+
+        # 检查是否是use元素（副本）
+        href = attrs.get('{http://www.w3.org/1999/xlink}href', '')
+        if not href:
+            href = attrs.get('href', '')
+
+        if href.startswith('#'):
+            # 这是副本，需要找到原元素
+            ref_id = href[1:]
+            original = self.find_by_id(ref_id)
+            if original:
+                # 基于原元素创建新属性
+                base_attrs = dict(original.attributes)
+                base_attrs['id'] = elem.id  # 保留副本的ID
+                if elem.label:
+                    base_attrs['inkscape:label'] = elem.label
+                attrs = base_attrs
+            else:
+                # 找不到原元素，使用当前元素
+                pass
+
+        # 构建输出
+        output = {
+            'id': elem.id,
+            'tag': elem.tag if not href else self.find_by_id(href[1:]).tag if href and self.find_by_id(href[1:]) else elem.tag,
+            'label': elem.label or ''
+        }
+
+        # 计算最终位置（原位置 + transform偏移）
+        if 'x' in attrs:
+            output['x'] = float(attrs['x']) + transform_x
+        if 'y' in attrs:
+            output['y'] = float(attrs['y']) + transform_y
+        if 'width' in attrs:
+            output['width'] = float(attrs['width'])
+        if 'height' in attrs:
+            output['height'] = float(attrs['height'])
+
+        # 提取颜色
+        color = self._extract_color(attrs)
+        if color:
+            output['color'] = color
+
+        return output
+
+    def _parse_translate(self, transform: str) -> tuple:
+        """解析transform=\"translate(x,y)\""""
+        import re
+        match = re.search(r'translate\s*\(\s*([^,\s]+)\s*,?\s*([^\)]*)\s*\)', transform)
+        if match:
+            x = float(match.group(1))
+            y = float(match.group(2)) if match.group(2) else 0.0
+            return x, y
+        return 0.0, 0.0
+
+    def _extract_color(self, attrs: Dict[str, str]) -> Optional[str]:
+        """从style或fill属性中提取颜色"""
+        # 优先从style中解析
+        style = attrs.get('style', '')
+        if 'fill:' in style:
+            import re
+            match = re.search(r'fill:([^;\s]+)', style)
+            if match:
+                return match.group(1)
+
+        # 从fill属性获取
+        fill = attrs.get('fill', '')
+        if fill and fill != 'none':
+            return fill
+
+        return None
 
     def get_geometry_info(self) -> List[Dict[str, Any]]:
         """提取几何信息（位置、尺寸）"""
