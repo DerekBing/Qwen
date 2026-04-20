@@ -1,0 +1,1 @@
+python svg_layer_tool.py query by_layer --name "Building" ../ssz-tools/plan/road_test.svg --pretty

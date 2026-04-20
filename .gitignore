@@ -1,0 +1,1 @@
+Nothing should be ignored based on the provided file changes. The only added file is a Python source file (`svg_layer_extractor.py`), which should not be ignored. There are no build artifacts, dependencies, temporary files, or other items that require ignoring.
